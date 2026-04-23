@@ -24,3 +24,5 @@ Thumbs.db
 # Secrets
 .env.production.local
 tauri.signing.key
+private.key
+private.key.pub
