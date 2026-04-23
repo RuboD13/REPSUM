@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build
+dist/
+src-tauri/target/
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Tauri
+src-tauri/.cargo/
+
+# OS
+Thumbs.db
+
+# Secrets
+.env.production.local
+tauri.signing.key

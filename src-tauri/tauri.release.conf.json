@@ -1,0 +1,12 @@
+{
+  "bundle": {
+    "externalBin": [
+      "sidecar/extractor",
+      "sidecar/tesseract/tesseract.exe",
+      "sidecar/tesseract/tessdata/spa.traineddata",
+      "sidecar/tesseract/liblept171.dll",
+      "sidecar/tesseract/libffi-8.dll"
+    ]
+  },
+  "version": "0.1.1"
+}
