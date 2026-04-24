@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS pagos_parciales (
 );
 "#;
 
+pub const MIGRATION_V7_SQL: &str = r#"
+ALTER TABLE pagos_parciales ADD COLUMN confirmado BOOLEAN DEFAULT 0;
+"#;
+
 pub const INIT_SQL: &str = r#"
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;

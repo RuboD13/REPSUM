@@ -64,16 +64,19 @@ interface Props {
   onClose: () => void;
 }
 
-type TabDetalle = "repartos" | "pagos" | "correos";
+type TabDetalle = "repartos" | "pagos" | "historialPagos" | "correos";
 
 export const DeudaDetalleModal: React.FC<Props> = ({ deuda, periodoActual, onClose }) => {
-  const { loadRepartosDeudaInquilino, setEstadoCobro, addPagoParcial, loadPagosParciales, deletePagoParcial, loadCorreosDeuda } = useRepartos();
+  const { loadRepartosDeudaInquilino, setEstadoCobro, addPagoParcial, loadPagosParciales, deletePagoParcial, updatePagoParcialConfirmado, loadCorreosDeuda } = useRepartos();
 
   const [repartos, setRepartos] = useState<RepartoExtended[]>([]);
   const [pagos, setPagos] = useState<PagoParcial[]>([]);
   const [correos, setCorreos] = useState<Correo[]>([]);
   const [tab, setTab] = useState<TabDetalle>("repartos");
   const [loading, setLoading] = useState(true);
+
+  // Filter for pagos/historial tabs
+  const [pagoFilter, setPagoFilter] = useState<"todos" | "confirmados" | "pendientes">("todos");
 
   // Filtro de período (para destacar el período actual)
   const [periodoFiltro, setPeriodoFiltro] = useState<string | null>(null);
@@ -140,8 +143,25 @@ export const DeudaDetalleModal: React.FC<Props> = ({ deuda, periodoActual, onClo
     await cargarDatos();
   };
 
+  const handleTogglePagoConfirmado = async (pagoId: number, confirmado: boolean) => {
+    await updatePagoParcialConfirmado(pagoId, !confirmado);
+    // Update UI immediately without reloading all data
+    setPagos((prev) =>
+      prev.map((p) => (p.id === pagoId ? { ...p, confirmado: !confirmado } : p))
+    );
+  };
+
   const totalPagado = pagos.reduce((s, p) => s + p.importe, 0);
+  const totalConfirmado = pagos.filter((p) => p.confirmado).reduce((s, p) => s + p.importe, 0);
   const totalPendiente = deuda.total_exceso - totalPagado;
+
+  // Pagos filtrados por estado
+  const pagosFiltrados =
+    pagoFilter === "confirmados"
+      ? pagos.filter((p) => p.confirmado)
+      : pagoFilter === "pendientes"
+        ? pagos.filter((p) => !p.confirmado)
+        : pagos;
 
   return (
     <Modal open onClose={onClose} title="" width={900}>
@@ -179,6 +199,7 @@ export const DeudaDetalleModal: React.FC<Props> = ({ deuda, periodoActual, onClo
           {([
             { id: "repartos", label: "Repartos pendientes", count: repartos.length },
             { id: "pagos", label: "Pagos parciales", count: pagos.length },
+            { id: "historialPagos", label: "Historial de pagos", count: pagos.length },
             { id: "correos", label: "Historial correos", count: correos.length },
           ] as const).map(({ id, label, count }) => (
             <button
@@ -409,40 +430,248 @@ export const DeudaDetalleModal: React.FC<Props> = ({ deuda, periodoActual, onClo
                     </div>
                   ) : (
                     <>
+                      {/* Filter buttons */}
+                      <div style={{ display: "flex", gap: "8px", marginBottom: "16px", paddingTop: "12px" }}>
+                        {(["todos", "confirmados", "pendientes"] as const).map((filter) => (
+                          <button
+                            key={filter}
+                            onClick={() => setPagoFilter(filter)}
+                            style={{
+                              padding: "6px 12px",
+                              background: pagoFilter === filter ? "var(--accent)" : "var(--bg-secondary)",
+                              color: pagoFilter === filter ? "white" : "var(--text-secondary)",
+                              border: "1px solid var(--border-subtle)",
+                              borderRadius: "4px",
+                              cursor: "pointer",
+                              fontSize: "12px",
+                              fontWeight: pagoFilter === filter ? 600 : 400,
+                              transition: "all 0.18s ease",
+                            }}
+                          >
+                            {filter === "todos" && "Todos"}
+                            {filter === "confirmados" && `Confirmados (${pagos.filter((p) => p.confirmado).length})`}
+                            {filter === "pendientes" && `Pendientes (${pagos.filter((p) => !p.confirmado).length})`}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Summary */}
                       <div style={{ marginBottom: "16px", padding: "12px 16px", background: "var(--bg-secondary)", borderLeft: "3px solid var(--status-ok)", fontSize: "13px" }}>
-                        Total abonado: <strong style={{ color: "var(--status-ok)" }}>{fmt(totalPagado)}€</strong>
+                        <strong style={{ color: "var(--status-ok)" }}>{pagos.filter((p) => p.confirmado).length} de {pagos.length}</strong> pagos confirmados
                         <span style={{ marginLeft: "16px", color: "var(--text-tertiary)" }}>
-                          Pendiente: <strong style={{ color: "var(--status-excess)" }}>{fmt(totalPendiente)}€</strong>
+                          Confirmado: <strong style={{ color: "var(--status-ok)" }}>{fmt(totalConfirmado)}€</strong>
                         </span>
                       </div>
-                      <div style={{ border: "1px solid var(--border)", overflow: "hidden" }}>
-                        {pagos.map((p, i) => {
-                          const reparto = repartos.find((r) => r.id === p.reparto_id);
-                          return (
-                            <div key={p.id} style={{ display: "grid", gridTemplateColumns: "100px 1fr 100px 100px 32px", gap: "12px", alignItems: "center", padding: "10px 16px", borderBottom: i < pagos.length - 1 ? "1px solid var(--border-subtle)" : "none" }}>
-                              <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{fechaLabel(p.fecha)}</div>
-                              <div>
-                                <div style={{ fontSize: "12px" }}>{p.notas ?? "—"}</div>
-                                {reparto && (
-                                  <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: "2px" }}>
-                                    {reparto.tipo_suministro} · {fechaLabel(reparto.periodo_inicio)} – {fechaLabel(reparto.periodo_fin)}
+
+                      {/* Payment list */}
+                      {pagosFiltrados.length === 0 ? (
+                        <div style={{ textAlign: "center", padding: "20px", color: "var(--text-tertiary)", fontStyle: "italic", fontSize: "12px" }}>
+                          No hay pagos {pagoFilter === "confirmados" ? "confirmados" : pagoFilter === "pendientes" ? "pendientes" : ""}
+                        </div>
+                      ) : (
+                        <div style={{ border: "1px solid var(--border)", overflow: "hidden" }}>
+                          {pagosFiltrados.map((p, i) => {
+                            const reparto = repartos.find((r) => r.id === p.reparto_id);
+                            return (
+                              <div
+                                key={p.id}
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: "32px 100px 1fr 100px 100px 32px",
+                                  gap: "12px",
+                                  alignItems: "center",
+                                  padding: "10px 16px",
+                                  borderBottom: i < pagosFiltrados.length - 1 ? "1px solid var(--border-subtle)" : "none",
+                                  background: p.confirmado ? "rgba(34, 197, 94, 0.05)" : "transparent",
+                                  transition: "background-color 0.18s ease",
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={p.confirmado}
+                                  onChange={() => handleTogglePagoConfirmado(p.id, p.confirmado)}
+                                  style={{ cursor: "pointer", width: "16px", height: "16px" }}
+                                  title={p.confirmado ? "Marcar como pendiente" : "Confirmar pago"}
+                                />
+                                <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{fechaLabel(p.fecha)}</div>
+                                <div>
+                                  <div style={{ fontSize: "12px" }}>{p.notas ?? "—"}</div>
+                                  {reparto && (
+                                    <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: "2px" }}>
+                                      {TIPO_ICON[reparto.tipo_suministro] || "•"} {reparto.tipo_suministro} · {fechaLabel(reparto.periodo_inicio)} – {fechaLabel(reparto.periodo_fin)}
+                                    </div>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: "13px", fontWeight: 500, color: p.confirmado ? "var(--status-ok)" : "var(--text-secondary)" }}>
+                                  {fmt(p.importe)}€
+                                </div>
+                                <div style={{ fontSize: "10px", color: "var(--text-tertiary)", textAlign: "right" }}>
+                                  {p.confirmado ? (
+                                    <span style={{ color: "var(--status-ok)", fontWeight: 500 }}>✓ Confirmado</span>
+                                  ) : (
+                                    <span>Pendiente</span>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => handleDeletePago(p.id)}
+                                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", fontSize: "14px", textAlign: "center", padding: "0" }}
+                                  title="Eliminar"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ── TAB: HISTORIAL DE PAGOS (TIMELINE) ── */}
+              {tab === "historialPagos" && (
+                <div>
+                  {pagos.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "40px", color: "var(--text-tertiary)", fontStyle: "italic" }}>
+                      No se han registrado pagos parciales
+                    </div>
+                  ) : (
+                    <>
+                      {/* Timeline */}
+                      <div style={{ padding: "16px", position: "relative" }}>
+                        {pagos
+                          .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
+                          .map((p, idx, sorted) => {
+                            const reparto = repartos.find((r) => r.id === p.reparto_id);
+                            const isLast = idx === sorted.length - 1;
+                            return (
+                              <div
+                                key={p.id}
+                                style={{
+                                  display: "flex",
+                                  gap: "16px",
+                                  marginBottom: isLast ? "0" : "20px",
+                                  position: "relative",
+                                }}
+                              >
+                                {/* Timeline line */}
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    left: "11px",
+                                    top: "32px",
+                                    bottom: isLast ? "0" : "-20px",
+                                    width: "2px",
+                                    background: p.confirmado ? "var(--status-ok)" : "var(--border-strong)",
+                                    zIndex: 0,
+                                  }}
+                                />
+
+                                {/* Timeline marker circle */}
+                                <div
+                                  style={{
+                                    width: "24px",
+                                    height: "24px",
+                                    borderRadius: "50%",
+                                    background: p.confirmado ? "var(--status-ok)" : "var(--bg-secondary)",
+                                    border: `2px solid ${p.confirmado ? "var(--status-ok)" : "var(--border-strong)"}`,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "12px",
+                                    color: "white",
+                                    fontWeight: 600,
+                                    marginTop: "4px",
+                                    zIndex: 1,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {p.confirmado ? "✓" : ""}
+                                </div>
+
+                                {/* Payment details card */}
+                                <div
+                                  style={{
+                                    flex: 1,
+                                    padding: "12px 16px",
+                                    background: p.confirmado ? "rgba(34, 197, 94, 0.08)" : "var(--bg-secondary)",
+                                    border: `1px solid ${p.confirmado ? "rgba(34, 197, 94, 0.2)" : "var(--border-subtle)"}`,
+                                    borderRadius: "6px",
+                                    transition: "all 0.18s ease",
+                                  }}
+                                >
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                                    <div>
+                                      <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>
+                                        {fechaLabel(p.fecha)}
+                                      </div>
+                                      {reparto && (
+                                        <div style={{ fontSize: "11px", color: "var(--text-tertiary)", marginTop: "2px" }}>
+                                          {TIPO_ICON[reparto.tipo_suministro] || "•"} {reparto.tipo_suministro}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                      <div style={{ textAlign: "right" }}>
+                                        <div style={{ fontSize: "16px", fontWeight: 600, color: p.confirmado ? "var(--status-ok)" : "var(--text-primary)" }}>
+                                          {fmt(p.importe)}€
+                                        </div>
+                                        <div
+                                          style={{
+                                            fontSize: "10px",
+                                            fontWeight: 500,
+                                            color: p.confirmado ? "var(--status-ok)" : "var(--text-secondary)",
+                                            marginTop: "2px",
+                                          }}
+                                        >
+                                          {p.confirmado ? "✓ Confirmado" : "⏳ Pendiente"}
+                                        </div>
+                                      </div>
+                                      <input
+                                        type="checkbox"
+                                        checked={p.confirmado}
+                                        onChange={() => handleTogglePagoConfirmado(p.id, p.confirmado)}
+                                        style={{ cursor: "pointer", width: "18px", height: "18px", marginTop: "8px" }}
+                                      />
+                                    </div>
                                   </div>
-                                )}
+                                  {p.notas && (
+                                    <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "8px", paddingTop: "8px", borderTop: "1px solid var(--border-subtle)" }}>
+                                      {p.notas}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <div style={{ fontFamily: "var(--font-display)", fontSize: "14px", fontWeight: 600, color: "var(--status-ok)", textAlign: "right" }}>
-                                +{fmt(p.importe)}€
-                              </div>
-                              <div style={{ fontSize: "10px", color: "var(--text-tertiary)", textAlign: "right" }}>
-                                {fechaLabel(p.created_at?.slice(0, 10) ?? "")}
-                              </div>
-                              <button
-                                onClick={() => handleDeletePago(p.id)}
-                                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", fontSize: "14px", textAlign: "center" }}
-                                title="Eliminar"
-                              >×</button>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                      </div>
+
+                      {/* Totals summary */}
+                      <div
+                        style={{
+                          marginTop: "16px",
+                          padding: "12px 16px",
+                          background: "var(--bg-secondary)",
+                          borderTop: "1px solid var(--border)",
+                          fontSize: "12px",
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr",
+                          gap: "16px",
+                        }}
+                      >
+                        <div>
+                          <div style={{ color: "var(--text-tertiary)", marginBottom: "4px" }}>Total confirmado</div>
+                          <div style={{ fontSize: "16px", fontWeight: 600, color: "var(--status-ok)" }}>
+                            {fmt(totalConfirmado)}€
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ color: "var(--text-tertiary)", marginBottom: "4px" }}>Total pendiente confirmación</div>
+                          <div style={{ fontSize: "16px", fontWeight: 600, color: "var(--status-excess)" }}>
+                            {fmt(totalPagado - totalConfirmado)}€
+                          </div>
+                        </div>
                       </div>
                     </>
                   )}

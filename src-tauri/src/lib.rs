@@ -43,6 +43,12 @@ pub fn run() {
             sql: db::MIGRATION_V6_SQL,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "add_payment_confirmation_tracking",
+            sql: db::MIGRATION_V7_SQL,
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

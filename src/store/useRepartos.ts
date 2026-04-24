@@ -44,6 +44,7 @@ interface RepartosState {
   addPagoParcial: (repartoId: number, fecha: string, importe: number, notas: string | null) => Promise<PagoParcial>;
   loadPagosParciales: (repartoIds: number[]) => Promise<PagoParcial[]>;
   deletePagoParcial: (id: number) => Promise<void>;
+  updatePagoParcialConfirmado: (pagoId: number, confirmado: boolean) => Promise<void>;
 
   /** Correos relacionados a una deuda (por inquilino+habitación) */
   loadCorreosDeuda: (inquilinoNombre: string) => Promise<Correo[]>;
@@ -239,6 +240,16 @@ export const useRepartos = create<RepartosState>((set, get) => ({
   deletePagoParcial: async (id) => {
     const db = await getDb();
     await db.execute("DELETE FROM pagos_parciales WHERE id = ?", [id]);
+    await get().loadDeudaViva();
+  },
+
+  updatePagoParcialConfirmado: async (pagoId, confirmado) => {
+    const db = await getDb();
+    await db.execute(
+      "UPDATE pagos_parciales SET confirmado = ? WHERE id = ?",
+      [confirmado ? 1 : 0, pagoId]
+    );
+    // Refresh debt summary since payment validation might affect calculations
     await get().loadDeudaViva();
   },
 

@@ -93,6 +93,7 @@ export interface PagoParcial {
   fecha: string;
   importe: number;
   notas: string | null;
+  confirmado: boolean;
   created_at: string;
 }
 
