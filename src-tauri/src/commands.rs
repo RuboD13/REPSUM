@@ -469,6 +469,26 @@ pub async fn save_export_file(data: String) -> Result<String, String> {
     Ok(file_path.to_string_lossy().to_string())
 }
 
+/// Escribe el archivo de exportación en la ruta elegida por el usuario
+/// (el frontend ya mostró el diálogo nativo y obtuvo la ruta)
+#[tauri::command]
+pub async fn write_export_file(path: String, data: String) -> Result<(), String> {
+    use std::path::Path;
+
+    let file_path = Path::new(&path);
+
+    // Create parent directories if needed
+    if let Some(parent) = file_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("No se pudo crear el directorio: {e}"))?;
+    }
+
+    std::fs::write(file_path, data)
+        .map_err(|e| format!("Error al guardar el archivo: {e}"))?;
+
+    Ok(())
+}
+
 /// Helper function to calculate SHA256 hash
 fn calculate_sha256(data: &str) -> String {
     use std::collections::hash_map::DefaultHasher;

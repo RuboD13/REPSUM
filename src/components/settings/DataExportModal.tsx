@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import type {
@@ -59,35 +60,35 @@ export const DataExportModal: React.FC<Props> = ({
   }, [open, inmuebles, habitaciones, inquilinos, contratos, facturas, repartos, pagosParciales, correos]);
 
   const handleExport = async () => {
-    console.log("🔄 Export started via Tauri backend...");
     setExporting(true);
     try {
-      // Call Tauri backend to export all data from database
+      // 1. Obtener datos del backend
       const exportDataJson = await invoke<string>("export_data");
-      console.log("✅ Export data received from backend");
-
       const exportData = JSON.parse(exportDataJson);
-      console.log("📊 Export data parsed:", {
-        version: exportData.version,
-        timestamp: exportData.timestamp,
-        dbVersion: exportData.dbVersion,
-        checksum: exportData.checksum,
-        totalRecords: Object.values(exportData.data).reduce((sum: number, arr: unknown) => sum + (Array.isArray(arr) ? arr.length : 0), 0),
+      const finalStr = JSON.stringify(exportData, null, 2);
+
+      // 2. Mostrar diálogo nativo de Windows para elegir dónde guardar
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const defaultName = `REPSUM_backup_${timestamp}.repsum-backup`;
+
+      const filePath = await save({
+        defaultPath: defaultName,
+        filters: [
+          { name: "REPSUM Backup", extensions: ["repsum-backup"] },
+          { name: "JSON", extensions: ["json"] },
+          { name: "Todos los archivos", extensions: ["*"] },
+        ],
       });
 
-      // Format with nice indentation
-      const finalStr = JSON.stringify(exportData, null, 2);
-      console.log("📦 Final JSON length:", finalStr.length, "bytes");
+      // Si el usuario canceló el diálogo, filePath será null
+      if (!filePath) return;
 
-      // Save file using Tauri native command
-      const filePath = await invoke<string>("save_export_file", { data: finalStr });
-      console.log("💾 File saved to:", filePath);
+      // 3. Escribir el archivo en la ruta elegida
+      await invoke("write_export_file", { path: filePath, data: finalStr });
 
       alert(`✅ Datos exportados correctamente.\n\nArchivo guardado en:\n${filePath}`);
-      console.log("✅ Export completed successfully!");
       onClose();
     } catch (e) {
-      console.error("❌ Error exporting data:", e);
       alert(`Error exportando datos: ${String(e)}`);
     } finally {
       setExporting(false);

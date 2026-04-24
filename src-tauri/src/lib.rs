@@ -1,7 +1,7 @@
 pub mod db;
 pub mod commands;
 
-use commands::{backup_db, backup_db_if_needed, check_for_updates, extract_factura, download_factura, export_data, save_export_file};
+use commands::{backup_db, backup_db_if_needed, check_for_updates, extract_factura, download_factura, export_data, save_export_file, write_export_file};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -68,6 +68,7 @@ pub fn run() {
             download_factura,
             export_data,
             save_export_file,
+            write_export_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running REPSUM");
